@@ -1,0 +1,13 @@
+[package]
+name = "excel_to_llm"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+calamine = "0.25.0"
+derive_more = { version = "1.0.0", features = ["display"] }
+eframe = "0.28.1"
+egui = "0.28.1"
+rfd = "0.15.0"
+strum = "0.24"
+strum_macros = "0.24"
