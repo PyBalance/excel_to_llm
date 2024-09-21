@@ -119,18 +119,25 @@ impl eframe::App for ExcelAnalyzerApp {
 
             ui.add_space(10.0);
             ui.label("Select Excel Files:");
-            if ui.button("Add xlsx Files").clicked() {
-                if let Some(paths) = rfd::FileDialog::new()
-                    .add_filter("Excel Files", &["xlsx"])
-                    .pick_files()
-                {
-                    for path in paths {
-                        if let Some(path_str) = path.to_str() {
-                            self.file_paths.push(path_str.to_string());
+            ui.horizontal(|ui| {
+                if ui.button("Add xlsx Files").clicked() {
+                    if let Some(paths) = rfd::FileDialog::new()
+                        .add_filter("Excel Files", &["xlsx"])
+                        .pick_files()
+                    {
+                        for path in paths {
+                            if let Some(path_str) = path.to_str() {
+                                self.file_paths.push(path_str.to_string());
+                            }
                         }
                     }
                 }
-            }
+                if !self.file_paths.is_empty() {
+                    if ui.button("Remove All").clicked() {
+                        self.file_paths.clear();
+                    }
+                }
+            });
 
             ui.group(|ui| {
                 ui.label("Selected Files:");
@@ -149,29 +156,31 @@ impl eframe::App for ExcelAnalyzerApp {
             });
 
             ui.add_space(10.0);
-            if ui.button("Analyze").clicked() && !self.is_analyzing {
-                self.output.clear();
-                self.is_analyzing = true;
-                
-                let tx = self.tx.clone();
-                let file_paths = self.file_paths.clone();
-                let rows_to_display = self.rows_to_display.clone();
-                let output_format = self.output_format.clone();
-                let header_rows = self.header_rows.clone();
-                thread::spawn(move || {
-                    for file_path in file_paths {
-                        match process_excel_file(&file_path, &rows_to_display, &output_format, &header_rows) {
-                            Ok(output) => {
-                                tx.send(output).unwrap();
-                            }
-                            Err(e) => {
-                                tx.send(format!("Error processing {}: {}", file_path, e)).unwrap();
+            ui.horizontal(|ui| {
+                if ui.button("Analyze").clicked() && !self.is_analyzing {
+                    self.output.clear();
+                    self.is_analyzing = true;
+                    
+                    let tx = self.tx.clone();
+                    let file_paths = self.file_paths.clone();
+                    let rows_to_display = self.rows_to_display.clone();
+                    let output_format = self.output_format.clone();
+                    let header_rows = self.header_rows.clone();
+                    thread::spawn(move || {
+                        for file_path in file_paths {
+                            match process_excel_file(&file_path, &rows_to_display, &output_format, &header_rows) {
+                                Ok(output) => {
+                                    tx.send(output).unwrap();
+                                }
+                                Err(e) => {
+                                    tx.send(format!("Error processing {}: {}", file_path, e)).unwrap();
+                                }
                             }
                         }
-                    }
-                    tx.send("Analysis complete".to_string()).unwrap();
-                });
-            }
+                        tx.send("Analysis complete".to_string()).unwrap();
+                    });
+                }
+            });
 
             if self.is_analyzing {
                 ui.add(egui::Spinner::new());
@@ -214,6 +223,12 @@ fn process_excel_file(file_path: &str, rows_to_display: &str, output_format: &Ou
             .take(header_rows)
             .map(|row| row.iter().map(|cell| cell.to_string()).collect())
             .collect();
+
+        // Check if headers are empty
+        if headers.is_empty() {
+            output.push_str(&format!("Warning: No headers found in sheet '{}'.\n\n", sheet_name));
+            continue; // Skip to the next sheet
+        }
 
         match output_format {
             OutputFormat::Markdown => {
