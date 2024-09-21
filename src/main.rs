@@ -8,6 +8,7 @@ use strum_macros::{EnumIter, Display};
 fn main() -> Result<(), eframe::Error> {
     let options = eframe::NativeOptions {
         viewport: egui::ViewportBuilder::default().with_inner_size([800.0, 600.0]),
+        run_and_return: true,
         ..Default::default()
     };
     eframe::run_native(
@@ -118,13 +119,16 @@ impl eframe::App for ExcelAnalyzerApp {
 
             ui.add_space(10.0);
             ui.label("Select Excel Files:");
-            if ui.button("Add Files").clicked() {
-                if let Some(path) = rfd::FileDialog::new()
-                    .add_filter("Excel Files", &["xlsx", "xls"])
-                    .pick_file()
+            if ui.button("Add xlsx Files").clicked() {
+                if let Some(paths) = rfd::FileDialog::new()
+                    .add_filter("Excel Files", &["xlsx"])
+                    .pick_files()
                 {
-                    let path_str = path.to_str().unwrap().to_string();
-                    self.file_paths.push(path_str);
+                    for path in paths {
+                        if let Some(path_str) = path.to_str() {
+                            self.file_paths.push(path_str.to_string());
+                        }
+                    }
                 }
             }
 
