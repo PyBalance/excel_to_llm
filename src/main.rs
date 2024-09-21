@@ -25,6 +25,7 @@ struct ExcelAnalyzerApp {
     rows_to_display: String,
     output_format: OutputFormat,
     is_analyzing: bool,
+    header_rows: String,
 }
 
 #[derive(Debug, Clone, PartialEq, EnumIter, Display)]
@@ -43,9 +44,10 @@ impl ExcelAnalyzerApp {
             output: String::new(),
             tx,
             rx,
-            rows_to_display: "5".to_string(), // Default to 5 rows
+            rows_to_display: "5".to_string(),
             output_format: OutputFormat::Markdown,
             is_analyzing: false,
+            header_rows: "1".to_string(),
         }
     }
 
@@ -78,9 +80,10 @@ impl Default for ExcelAnalyzerApp {
             output: String::new(),
             tx,
             rx,
-            rows_to_display: "5".to_string(), // Default to 5 rows
+            rows_to_display: "5".to_string(),
             output_format: OutputFormat::Markdown,
             is_analyzing: false,
+            header_rows: "1".to_string(),
         }
     }
 }
@@ -97,6 +100,11 @@ impl eframe::App for ExcelAnalyzerApp {
                 ui.add(egui::TextEdit::singleline(&mut self.rows_to_display)
                     .desired_width(50.0)
                     .hint_text("Rows"));
+                ui.add_space(10.0);
+                ui.label("Header Rows:");
+                ui.add(egui::TextEdit::singleline(&mut self.header_rows)
+                    .desired_width(50.0)
+                    .hint_text("1"));
                 ui.add_space(10.0);
                 ui.label("Output Format:");
                 egui::ComboBox::from_label("")
@@ -145,9 +153,10 @@ impl eframe::App for ExcelAnalyzerApp {
                 let file_paths = self.file_paths.clone();
                 let rows_to_display = self.rows_to_display.clone();
                 let output_format = self.output_format.clone();
+                let header_rows = self.header_rows.clone();
                 thread::spawn(move || {
                     for file_path in file_paths {
-                        match process_excel_file(&file_path, &rows_to_display, &output_format) {
+                        match process_excel_file(&file_path, &rows_to_display, &output_format, &header_rows) {
                             Ok(output) => {
                                 tx.send(output).unwrap();
                             }
@@ -181,11 +190,12 @@ impl eframe::App for ExcelAnalyzerApp {
     }
 }
 
-fn process_excel_file(file_path: &str, rows_to_display: &str, output_format: &OutputFormat) -> Result<String, Box<dyn Error>> {
+fn process_excel_file(file_path: &str, rows_to_display: &str, output_format: &OutputFormat, header_rows: &str) -> Result<String, Box<dyn Error>> {
     let mut workbook: Xlsx<_> = open_workbook(file_path)?;
     let mut output = String::new();
 
     let rows_to_display = rows_to_display.parse::<usize>().unwrap_or(5);
+    let header_rows = header_rows.parse::<usize>().unwrap_or(1);
 
     for (sheet_index, sheet_name) in workbook.sheet_names().iter().enumerate() {
         let sheet = match workbook.worksheet_range(sheet_name) {
@@ -195,12 +205,10 @@ fn process_excel_file(file_path: &str, rows_to_display: &str, output_format: &Ou
             }
         };
 
-        let headers: Vec<String> = sheet
+        let headers: Vec<Vec<String>> = sheet
             .rows()
-            .next()
-            .ok_or("Sheet is empty")?
-            .iter()
-            .map(|cell| cell.to_string())
+            .take(header_rows)
+            .map(|row| row.iter().map(|cell| cell.to_string()).collect())
             .collect();
 
         match output_format {
@@ -209,24 +217,31 @@ fn process_excel_file(file_path: &str, rows_to_display: &str, output_format: &Ou
                 output.push_str(&format!("## Sheet {}:\n\n", sheet_index + 1));
                 output.push_str(&format!("### Sheet Name: {}\n\n", sheet_name));
                 output.push_str("### Headers:\n");
-                for (i, header) in headers.iter().enumerate() {
-                    output.push_str(&format!("- {}: {}\n", i + 1, header));
+                for (i, header_row) in headers.iter().enumerate() {
+                    output.push_str(&format!("Row {}:\n", i + 1));
+                    for (j, header) in header_row.iter().enumerate() {
+                        output.push_str(&format!("- Column {}: {}\n", j + 1, header));
+                    }
+                    output.push_str("\n");
                 }
-                output.push_str("\n### Sample Data:\n\n");
+                output.push_str("### Sample Data:\n\n");
 
-                // Create markdown table header
-                output.push_str("|");
-                for header in &headers {
-                    output.push_str(&format!(" {} |", header));
+                // Create markdown table with all header rows
+                for header_row in &headers {
+                    output.push_str("|");
+                    for header in header_row {
+                        output.push_str(&format!(" {} |", header));
+                    }
+                    output.push_str("\n");
                 }
-                output.push_str("\n|");
-                for _ in &headers {
+                output.push_str("|");
+                for _ in &headers[0] {
                     output.push_str(" --- |");
                 }
                 output.push_str("\n");
 
                 // Add table rows
-                for row in sheet.rows().skip(1).take(rows_to_display) {
+                for row in sheet.rows().skip(header_rows).take(rows_to_display) {
                     output.push_str("|");
                     for cell in row {
                         output.push_str(&format!(" {} |", cell.to_string()));
@@ -239,12 +254,24 @@ fn process_excel_file(file_path: &str, rows_to_display: &str, output_format: &Ou
                 output.push_str(&format!("<excel-file name=\"{}\">\n", file_path));
                 output.push_str(&format!("  <sheet index=\"{}\" name=\"{}\">\n", sheet_index + 1, sheet_name));
                 output.push_str("    <headers>\n");
-                for (i, header) in headers.iter().enumerate() {
-                    output.push_str(&format!("      <header index=\"{}\">{}</header>\n", i + 1, header));
+                for (i, header_row) in headers.iter().enumerate() {
+                    output.push_str(&format!("      <row index=\"{}\">\n", i + 1));
+                    for (j, header) in header_row.iter().enumerate() {
+                        output.push_str(&format!("        <header column=\"{}\">{}</header>\n", j + 1, header));
+                    }
+                    output.push_str("      </row>\n");
                 }
                 output.push_str("    </headers>\n");
                 output.push_str("    <sample-data>\n");
-                for row in sheet.rows().skip(1).take(rows_to_display) {
+                // Include header rows in sample data
+                for header_row in &headers {
+                    output.push_str("      <row>\n");
+                    for header in header_row {
+                        output.push_str(&format!("        <cell>{}</cell>\n", header));
+                    }
+                    output.push_str("      </row>\n");
+                }
+                for row in sheet.rows().skip(header_rows).take(rows_to_display) {
                     output.push_str("      <row>\n");
                     for cell in row {
                         output.push_str(&format!("        <cell>{}</cell>\n", cell.to_string()));
@@ -260,11 +287,22 @@ fn process_excel_file(file_path: &str, rows_to_display: &str, output_format: &Ou
                 output.push_str(&format!("Sheet {}:\n", sheet_index + 1));
                 output.push_str(&format!("Sheet Name: {}\n\n", sheet_name));
                 output.push_str("Headers:\n");
-                for (i, header) in headers.iter().enumerate() {
-                    output.push_str(&format!("{}: {}\n", i + 1, header));
+                for (i, header_row) in headers.iter().enumerate() {
+                    output.push_str(&format!("Row {}:\n", i + 1));
+                    for (j, header) in header_row.iter().enumerate() {
+                        output.push_str(&format!("Column {}: {}\n", j + 1, header));
+                    }
+                    output.push_str("\n");
                 }
-                output.push_str("\nSample Data:\n\n");
-                for row in sheet.rows().skip(1).take(rows_to_display) {
+                output.push_str("Sample Data:\n\n");
+                // Include header rows in sample data
+                for header_row in &headers {
+                    for header in header_row {
+                        output.push_str(&format!("{}\t", header));
+                    }
+                    output.push_str("\n");
+                }
+                for row in sheet.rows().skip(header_rows).take(rows_to_display) {
                     for cell in row {
                         output.push_str(&format!("{}\t", cell.to_string()));
                     }
