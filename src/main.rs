@@ -91,25 +91,15 @@ impl eframe::App for ExcelAnalyzerApp {
             ui.heading("Excel Analyzer");
 
             ui.horizontal(|ui| {
-                if ui.button("Add Excel File").clicked() {
-                    if let Some(path) = rfd::FileDialog::new()
-                        .add_filter("Excel Files", &["xlsx", "xls"])
-                        .pick_file()
-                    {
-                        let path_str = path.to_str().unwrap().to_string();
-                        self.file_paths.push(path_str);
-                    }
-                }
-
+                ui.label("Settings:");
+                ui.add_space(10.0);
+                ui.label("Rows:");
                 ui.add(egui::TextEdit::singleline(&mut self.rows_to_display)
                     .desired_width(50.0)
                     .hint_text("Rows"));
-
-                if let Ok(rows) = self.rows_to_display.parse::<usize>() {
-                    self.rows_to_display = rows.to_string();
-                }
-
-                egui::ComboBox::from_label("Output Format")
+                ui.add_space(10.0);
+                ui.label("Output Format:");
+                egui::ComboBox::from_label("")
                     .selected_text(format!("{:?}", self.output_format))
                     .show_ui(ui, |ui| {
                         ui.selectable_value(&mut self.output_format, OutputFormat::Markdown, "Markdown");
@@ -117,6 +107,18 @@ impl eframe::App for ExcelAnalyzerApp {
                         ui.selectable_value(&mut self.output_format, OutputFormat::PlainText, "Plain Text");
                     });
             });
+
+            ui.add_space(10.0);
+            ui.label("Select Excel Files:");
+            if ui.button("Add Files").clicked() {
+                if let Some(path) = rfd::FileDialog::new()
+                    .add_filter("Excel Files", &["xlsx", "xls"])
+                    .pick_file()
+                {
+                    let path_str = path.to_str().unwrap().to_string();
+                    self.file_paths.push(path_str);
+                }
+            }
 
             ui.group(|ui| {
                 ui.label("Selected Files:");
@@ -134,7 +136,8 @@ impl eframe::App for ExcelAnalyzerApp {
                 }
             });
 
-            if ui.button("Analyze Files").clicked() && !self.is_analyzing {
+            ui.add_space(10.0);
+            if ui.button("Analyze").clicked() && !self.is_analyzing {
                 self.output.clear();
                 self.is_analyzing = true;
                 
@@ -170,6 +173,7 @@ impl eframe::App for ExcelAnalyzerApp {
                 }
             }
 
+            // Add a scrollable area for results
             egui::ScrollArea::vertical().show(ui, |ui| {
                 ui.add(egui::TextEdit::multiline(&mut self.output).desired_width(f32::INFINITY));
             });
